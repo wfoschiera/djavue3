@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
-from decouple import config
+from decouple import config, Csv
 from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -32,14 +32,23 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
     default="{{cookiecutter.deploy_domain}}",
-    cast=lambda v: [s.strip() for s in v.split(",")],
+    cast=Csv(),
 )
 
 CSRF_TRUSTED_ORIGINS = config(
     "CSRF_TRUSTED_ORIGINS",
     default="https://{{cookiecutter.deploy_domain}}",
-    cast=lambda v: [s.strip() for s in v.split(",")],
+    cast=Csv(),
 )
+
+# CORS
+# if DEBUG:
+#     CORS_ALLOW_CREDENTIALS = config("CORS_ALLOW_CREDENTIALS", default=False, cast=bool)
+#     CORS_ALLOWED_ORIGINS = config(
+#         "CSRF_TRUSTED_ORIGINS",
+#         default="http://localhost:3000",
+#         cast=Csv(),
+#     )
 
 # Application definition
 DJANGO_APPS = [
@@ -53,8 +62,12 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     "django_extensions",
-    {%- if cookiecutter.deploy_to == "fly.io" -%}"whitenoise.runserver_nostatic",{%- endif -%}
+    {% if cookiecutter.deploy_to == "fly.io" %}"whitenoise.runserver_nostatic",{% endif %}
 ]
+
+# CORS
+# if DEBUG:
+#     THIRD_PARTY_APPS += ['corsheaders']
 
 LOCAL_APPS = [
     "{{cookiecutter.project_slug}}.base",
@@ -65,15 +78,21 @@ LOCAL_APPS = [
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    {%- if cookiecutter.deploy_to == "fly.io" -%}"whitenoise.middleware.WhiteNoiseMiddleware",{%- endif -%}
+    "django.middleware.security.SecurityMiddleware",{% if cookiecutter.deploy_to == "fly.io" %}
+    "whitenoise.middleware.WhiteNoiseMiddleware",{% endif %}
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",{% if cookiecutter.django_api == "🦄 django_only" %}
+    "{{cookiecutter.project_slug}}.base.middlewares.DjavueApiErrorHandlingMiddleware",{% endif %}
 ]
+
+# CORS
+# if DEBUG:
+#     before_common = MIDDLEWARE.index("django.middleware.common.CommonMiddleware")
+#     MIDDLEWARE.insert(before_common, "corsheaders.middleware.CorsMiddleware")
 
 ROOT_URLCONF = "{{cookiecutter.project_slug}}.{{cookiecutter.project_slug}}.urls"
 
@@ -93,9 +112,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = (
-    "{{cookiecutter.project_slug}}.{{cookiecutter.project_slug}}.wsgi.application"
-)
+WSGI_APPLICATION = "{{cookiecutter.project_slug}}.{{cookiecutter.project_slug}}.wsgi.application"
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -147,14 +164,63 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/2.0/howto/static-files/
 
 STATIC_URL = "/static/"
-STATIC_ROOT = config("DJANGO_STATIC_ROOT", default=os.path.join(BASE_DIR, "static"))
+STATIC_ROOT = config(
+    "DJANGO_STATIC_ROOT", default=os.path.join(BASE_DIR.parent, "static")
+)
 {% if cookiecutter.deploy_to == "fly.io" %}
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 {% endif %}
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+LOG_LEVEL = config("LOG_LEVEL", default="INFO")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module}:{lineno} {process:d} {message}",
+            "style": "{",
+        },
+        "console": {
+            "format": "{levelname} {asctime} {module}:{lineno} {process:d} {message}",
+            "style": "{",
+        },
+        "django": {
+            "format": "{levelname} {asctime} {module}:{lineno} {process:d} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+        "django": {"class": "logging.StreamHandler", "formatter": "verbose"},
+    },
+    "loggers": {
+        "": {
+            "level": LOG_LEVEL,
+            "handlers": [
+                "console",
+            ],
+        },
+        "django.server": {
+            "level": LOG_LEVEL,
+            "handlers": [
+                "console",
+            ],
+        },
+    },
+}
 
 # LOGGING = {
 #     'version': 1,

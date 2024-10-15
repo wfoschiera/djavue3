@@ -1,94 +1,65 @@
 # coding: utf-8
+import logging
+{% if cookiecutter.django_api != "🥷 django_ninja" %}import json{% endif %}
 from django.contrib import auth
 from django.http import JsonResponse
-{% if cookiecutter.django_api == "django_ninja" %}
-from ninja import Router, Form
-
-from .schemas import LoggedUserSchema, UserSchema
-{% else %}
 from django.views.decorators.csrf import csrf_exempt
-{% endif %}
-from typing import Optional
-from ..{{ cookiecutter.app_name }}.service import log_svc
+{% if cookiecutter.django_api == "🥷 django_ninja" %}
+from ninja import Router
 
-{% if cookiecutter.django_api == "django_ninja" %}router = Router()
-
-class PermissionSchema(Schema):
-    ADMIN: bool
-    STAFF: bool
-
-
-class UserSchema(Schema):
-    id: int
-    name: str
-    username: str
-    first_name: str
-    last_name: str
-    email: str
-    avatar: Optional[str] = None
-    bio: Optional[str] = None
-    permissions: PermissionSchema
-
-
-class LoggedUserSchema(Schema):
-    user: UserSchema
-    authenticated: bool
+from .schemas import LoggedUserSchema, UserSchema, LoginSchema, Error
 {% endif %}
 
-{% if cookiecutter.django_api == "django_ninja" %}
-@router.post("/login", response=UserSchema)
-def login(request, username: str = Form(...), password: str = Form(...)):
-{% else %}
+logger = logging.getLogger(__name__)
+{% if cookiecutter.django_api == "🥷 django_ninja" %}router = Router(){% endif %}
+
+{% if cookiecutter.django_api == "🥷 django_ninja" %}
+@router.post("/login", response={201: UserSchema, 401: Error})
+@csrf_exempt
+def login(request, data: LoginSchema):{% else %}
 @csrf_exempt
 def login(request):{% endif %}
-    username = request.POST["username"]
-    password = request.POST["password"]
-    user = auth.authenticate(username=username, password=password)
+    """
+    Login do usuário e criação de uma nova sessão
+    """
+    logger.info("API login")
+    {% if cookiecutter.django_api != "🥷 django_ninja" %}body = json.loads(request.body){% endif %}
+    username = {% if cookiecutter.django_api == "🥷 django_ninja" %}data.username{% else %}body["username"]{% endif %}
+    password = {% if cookiecutter.django_api == "🥷 django_ninja" %}data.password{% else %}body["password"]{% endif %}
+    user_authenticaded = auth.authenticate(username=username, password=password)
     user_dict = None
-    if user is not None:
-        if user.is_active:
-            auth.login(request, user)
-            log_svc.log_login(request.user)
-            user_dict = _user2dict(user)
-    return JsonResponse(user_dict, safe=False)
+    if user_authenticaded is not None:
+        if user_authenticaded.is_active:
+            auth.login(request, user_authenticaded)
+            user_dict = user_authenticaded.to_dict_json()
+            logger.info("API login success")
+    if not user_dict:
+        user_dict = {"message": "Unauthorized"}
+        return JsonResponse(user_dict, safe=False, status=401)
+    return JsonResponse(user_dict, safe=False, status=201)
 
 
-{% if cookiecutter.django_api == "django_ninja" %}@router.post("/logout"){% endif %}
+{% if cookiecutter.django_api == "🥷 django_ninja" %}@router.post("/logout"){% endif %}
 def logout(request):
+    """
+    Encerra sessão do usuário
+    """
     if request.method.lower() != "post":
         raise Exception("Logout only via post")
-    if request.user.is_authenticated:
-        log_svc.log_logout(request.user)
+    logger.info(f"API logout: {request.user.username}")
     auth.logout(request)
     return JsonResponse({})
 
 
-{% if cookiecutter.django_api == "django_ninja" -%}@router.get("/whoami", response=LoggedUserSchema){% endif %}
+{% if cookiecutter.django_api == "🥷 django_ninja" -%}@router.get("/whoami", response=LoggedUserSchema){% endif %}
 def whoami(request):
-    i_am = (
-        {
-            "user": _user2dict(request.user),
-            "authenticated": True,
-        }
-        if request.user.is_authenticated
-        else {"authenticated": False}
-    )
-    return JsonResponse(i_am)
+    """
+    Retorna dados do usuário logado
+    """
+    user_data = {"authenticated": False}
+    if request.user.is_authenticated:
+        user_data["authenticated"] = True
+        user_data["user"] = request.user.to_dict_json()
 
-
-def _user2dict(user):
-    d = {
-        "id": user.id,
-        "name": user.get_full_name(),
-        "username": user.username,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "email": user.email,
-        "avatar": user.avatar,
-        "bio": user.bio,
-        "permissions": {
-            "ADMIN": user.is_superuser,
-            "STAFF": user.is_staff,
-        },
-    }
-    return d
+    logger.info("API whoami")
+    return JsonResponse(user_data)

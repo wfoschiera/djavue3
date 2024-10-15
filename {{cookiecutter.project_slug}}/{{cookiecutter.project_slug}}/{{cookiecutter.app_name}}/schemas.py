@@ -1,17 +1,36 @@
-from typing import List, Optional
+from typing import List
 
-from ninja import Schema
+from ninja import Schema, ModelSchema
+from pydantic import ConfigDict, field_validator
+from .models import {{cookiecutter.model_singular}}
 
 
-class TaskSchemaIn(Schema):
+class {{cookiecutter.model_singular}}SchemaIn(Schema):
     description: str
 
+    @field_validator("description")
+    def valid_description(cls, description: str) -> str:
+        if description and len(description) <= 2:
+            raise ValueError("It must be at least 3 characteres long.")
+        return description
 
-class TaskSchema(Schema):
-    id: Optional[int]
-    description: str
-    done: bool = False
+
+class {{cookiecutter.model_singular}}Schema(ModelSchema):
+    class Meta:
+        model = {{cookiecutter.model_singular}}
+        fields = ["id", "description", "done"]
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 42,
+                "description": "{{cookiecutter.model_singular}} One",
+                "done": True,
+            }
+        },
+    )
 
 
-class ListTasksSchema(Schema):
-    tasks: List[TaskSchema]
+class List{{cookiecutter.model}}Schema(Schema):
+    {{cookiecutter.model_lower}}: List[{{cookiecutter.model_singular}}Schema]
